@@ -20,6 +20,7 @@ library(ncaahoopR)
 library(extrafont)
 library(cowplot)
 
+Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 2)
 ```
 
 # Creating Court 
@@ -173,14 +174,24 @@ plot_court = function(court_theme = court_themes$light, use_short_three = FALSE)
 }
 ```
 
-# NBA Data
+# NBA Data, and Durant
 ```{r}
 # Grab team names to type into teams_shots function
 nba_teams() %>% filter(isNonNBATeam == 0)
+
 # Grab team shot data
-nets <- teams_shots(teams = "Brooklyn Nets", 
-                    seasons = 2021, 
-                    season_types = "Playoffs")
+nets_ply <- teams_shots(teams = "Brooklyn Nets", 
+                    seasons = 2021,
+                    season_types = "Playoffs"
+                    )
+
+#make season type variable
+nets_reg <- nets_reg %>% mutate(season = "Regular")
+nets_ply <- nets_ply %>% mutate(season = "Playoffs")
+
+#combine into one dataframe
+nets <- rbind(nets_reg, nets_ply)
+
 # Filter shot data for player & clean data to fit court dimensions
 durant <- nets %>% filter(namePlayer=="Kevin Durant") %>% 
   mutate(x = as.numeric(as.character(locationX)) / 10, 
@@ -189,8 +200,12 @@ durant <- nets %>% filter(namePlayer=="Kevin Durant") %>%
 durant$x <- durant$x * -1 
 # Filter shots by game date - this was the most 3's made that season
 final_durant <- durant %>% filter(dateGame == 20210615)
-```
 
+#look at left vs right side of court shots
+durant <- durant %>% mutate(shot_side = 
+                              ifelse(x < 0, "right", "left"))
+
+```
 
 # NBA Chart - Durant one game
 ```{r}
@@ -287,4 +302,58 @@ ggdraw(p2) +
   theme(plot.background = element_rect(fill="gray20", color = NA)) 
 
 #ggsave("Durant2021.png", height = 6, width = 6, dpi = 300)
+```
+
+#Durant - left vs right
+```{r}
+#bar chart
+durant %>% ggplot(aes(x = shot_side, group = isShotMade, fill = isShotMade)) + geom_bar(position = "dodge")
+
+#proportions
+d_shots <- table(durant$shot_side)
+d_shot_table <- table(durant$shot_side, durant$isShotMade)
+prop.table(d_shot_table, margin = 1)
+
+#scatterplot
+p3 <- plot_court(court_themes$ppt, use_short_three = F) +
+  geom_point(data = durant, 
+             aes(x = x, y = y, 
+                 color = side, fill = isShotMade
+                 ), 
+             size =3, shape = 21, stroke = .5
+             ) +  
+  scale_color_manual(values = c("green4","red3"), 
+                     aesthetics = "color", 
+                     breaks=c("left", "right"), 
+                     labels=c("Right", "Left")
+                     ) +
+  scale_fill_manual(values = c("green2","gray20"), 
+                    aesthetics = "fill", 
+                    breaks=c("TRUE", "FALSE"), 
+                    labels=c("Made", "Missed")
+                    ) +
+  scale_x_continuous(limits = c(-27.5, 27.5)
+                     ) +
+  scale_y_continuous(limits = c(0, 45)
+                     ) +
+  theme(plot.title = element_text(hjust = .5, size = 22, 
+                                  face = "bold", vjust = -4),
+        plot.subtitle = element_text(hjust = .5, size = 10, 
+                                     face = "bold", vjust = -8),
+        legend.position = c(.5, .85),
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        legend.text = element_text(hjust = .5, size = 10, 
+                                   face = "bold", colour = "white"),
+        plot.caption = element_text(hjust = .5, size = 6, 
+                                    face = "bold", 
+                                    colour = "lightgrey", 
+                                    vjust = 8)
+        ) +
+  ggtitle(label = "Kevin Durant Left v Right",
+          subtitle = "50.9% from left, n = 110, 51.7% from right, n = 172") +
+  labs(caption = "@jmeerse")
+
+p3
+
 ```
