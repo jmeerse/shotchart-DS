@@ -10,6 +10,9 @@ knitr::opts_chunk$set(echo = TRUE)
 install.packages("nbastatR")
 devtools::install_github("abresler/nbastatR")
 devtools::install_github("lbenz730/ncaahoopR")
+install.packages("grImport2")
+install.packages("rsvg")
+
 ```
 #libraries
 ```{r libraries}
@@ -19,6 +22,9 @@ library(nbastatR)
 library(ncaahoopR)
 library(extrafont)
 library(cowplot)
+library(ggimage)
+library(grImport2)
+library(rsvg)
 
 Sys.setenv("VROOM_CONNECTION_SIZE" = 131072 * 2)
 ```
@@ -192,6 +198,25 @@ nets_ply <- nets_ply %>% mutate(season = "Playoffs")
 #combine into one dataframe
 nets <- rbind(nets_reg, nets_ply)
 
+#for all teams 2021 season
+shots21 <- teams_shots(seasons = 2021, season_types = "Regular Season", all_active_teams = TRUE)
+
+shots21 <- shots21 %>% 
+  mutate(x = as.numeric(as.character(locationX)) / 10, 
+         y = as.numeric(as.character(locationY)) / 10 + hoop_center_y)
+
+# Horizontally flip the data
+shots21$x <- shots21$x * -1 
+
+shots21 %>% ggplot(aes(x = locationX, y = locationY )) + geom_hex()
+
+shots21 %>% ggplot(aes(x = locationX, y = locationY )) + geom_hex() + facet_wrap(~ nameTeam)
+
+#get players with more than 1000 shots
+ov1000 <- shots21 %>% group_by(idPlayer) %>% 
+  filter(n() > 1000)
+
+
 # Filter shot data for player & clean data to fit court dimensions
 durant <- nets %>% filter(namePlayer=="Kevin Durant") %>% 
   mutate(x = as.numeric(as.character(locationX)) / 10, 
@@ -257,8 +282,8 @@ ggdraw(p1) +
 
 #Durant - full season
 ```{r}
-p2 <- plot_court(court_themes$ppt, use_short_three = F) +
-  geom_point(data = durant, 
+psc <- plot_court(court_themes$ppt, use_short_three = F) +
+  geom_point(data = filter(shots21, namePlayer == "Stephen Curry"), 
              aes(x = x, y = y, 
                  color = isShotMade, fill = isShotMade
                  ), 
@@ -292,16 +317,64 @@ p2 <- plot_court(court_themes$ppt, use_short_three = F) +
                                     colour = "lightgrey", 
                                     vjust = 8)
         ) +
+  ggtitle(label = "Steph Curry 2021 Season",
+          subtitle = "32 PTS | 5.5 REB | 5.8 AST | 42.1% 3PT") +
+  labs(caption = "@jmeerse")
+
+psc
+ 
+ggdraw(psc) + 
+  theme(plot.background = element_rect(fill="gray20", color = NA)) 
+
+ggsave("Steph2021.png", height = 6, width = 6, dpi = 300)
+
+
+#here we can just filter to a certain player
+p10 <- plot_court(court_themes$ppt, use_short_three = F) +
+  geom_point(data = filter(shots21, namePlayer == "Draymond Green"), 
+             aes(x = x, y = y, 
+                 color = isShotMade, fill = isShotMade
+                 ), 
+             size = 3, shape = 21, stroke = .5
+             ) +  
+  scale_color_manual(values = c("green4","red3"), 
+                     aesthetics = "color", 
+                     breaks=c("TRUE", "FALSE"), 
+                     labels=c("Made", "Missed")
+                     ) +
+  scale_fill_manual(values = c("green2","gray20"), 
+                    aesthetics = "fill", 
+                    breaks=c("TRUE", "FALSE"), 
+                    labels=c("Made", "Missed")
+                    ) +
+  scale_x_continuous(limits = c(-27.5, 27.5)
+                     ) +
+  scale_y_continuous(limits = c(0, 45)
+                     ) #+
+  #facet_wrap(~shots21$nameTeam)
+  
+p10
+
+
+#attach this back onto above for labels
+  theme(plot.title = element_text(hjust = .5, size = 22, 
+                                  face = "bold", vjust = -4),
+        plot.subtitle = element_text(hjust = .5, size = 10, 
+                                     face = "bold", vjust = -8),
+        legend.position = c(.5, .90),
+        legend.direction = "horizontal",
+        legend.title = element_blank(),
+        legend.text = element_text(hjust = .5, size = 10, 
+                                   face = "bold", colour = "white"),
+        plot.caption = element_text(hjust = .5, size = 6, 
+                                    face = "bold", 
+                                    colour = "lightgrey", 
+                                    vjust = 8)
+        ) +
   ggtitle(label = "Kevin Durant 2021 Season",
           subtitle = "29.9 PTS | 7.4 REB | 6.4 AST | 38.3% 3PT") +
   labs(caption = "@jmeerse")
 
-p2
- 
-ggdraw(p2) + 
-  theme(plot.background = element_rect(fill="gray20", color = NA)) 
-
-#ggsave("Durant2021.png", height = 6, width = 6, dpi = 300)
 ```
 
 #Durant - left vs right
@@ -357,3 +430,37 @@ p3 <- plot_court(court_themes$ppt, use_short_three = F) +
 p3
 
 ```
+
+#team level stuff
+```{r}
+teampct <- shots21 %>% group_by(idTeam, nameTeam) %>% 
+  summarise(pct2 = sum((typeShot == "2PT Field Goal") & (isShotMade == "TRUE")) / sum(typeShot == "2PT Field Goal"), 
+            pct3 = sum((typeShot == "3PT Field Goal") & (isShotMade == "TRUE")) / sum(typeShot == "3PT Field Goal"),
+            n = n(),
+            )
+
+teams <- filter(df_dict_nba_teams, idLeague == 4)
+teampct <- left_join(teampct, teams, by = "idTeam")
+teampct = subset(teampct, select = -c(nameTeam.y))
+
+#graph of %2 vs %3
+teampct %>% ggplot(aes(x = pct2, 
+                       y = pct3)
+                   ) + 
+  geom_image(aes(image = urlThumbnailTeam), 
+             size = .075) +
+  geom_text(label = teampct$slugTeam, 
+            nudge_y = -.0025, 
+            size = 2)
+
+
+#left vs right side of court
+shots21 <- shots21 %>% mutate(shot_side = 
+                              ifelse(x < 0, "left", "right"))
+
+
+shots21 %>% ggplot(aes(x = shot_side, group = isShotMade, fill = isShotMade)) + geom_bar(position = "dodge")
+
+ov1000 %>% ggplot(aes(x = shot_side, group = isShotMade, fill = isShotMade)) + geom_bar(position = "dodge") + facet_wrap(~ namePlayer)
+```
+
