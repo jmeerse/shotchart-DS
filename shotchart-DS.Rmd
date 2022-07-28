@@ -216,6 +216,10 @@ shots21 %>% ggplot(aes(x = locationX, y = locationY )) + geom_hex() + facet_wrap
 ov1000 <- shots21 %>% group_by(idPlayer) %>% 
   filter(n() > 1000)
 
+#how 'bout just over 100 shots
+ov_100 <- shots21 %>% group_by(idPlayer) %>% 
+  filter(n() > 100)
+
 
 # Filter shot data for player & clean data to fit court dimensions
 durant <- nets %>% filter(namePlayer=="Kevin Durant") %>% 
@@ -280,7 +284,7 @@ ggdraw(p1) +
 #ggsave("Durant.png", height = 6, width = 6, dpi = 300)
 ```
 
-#Durant - full season
+#Durant - full season - other players too
 ```{r}
 psc <- plot_court(court_themes$ppt, use_short_three = F) +
   geom_point(data = filter(shots21, namePlayer == "Stephen Curry"), 
@@ -462,5 +466,26 @@ shots21 <- shots21 %>% mutate(shot_side =
 shots21 %>% ggplot(aes(x = shot_side, group = isShotMade, fill = isShotMade)) + geom_bar(position = "dodge")
 
 ov1000 %>% ggplot(aes(x = shot_side, group = isShotMade, fill = isShotMade)) + geom_bar(position = "dodge") + facet_wrap(~ namePlayer)
+
+#player sides df
+playerside_100 <- ov_100 %>% 
+  group_by(idPlayer, namePlayer) %>% 
+  summarise(pctlft = sum((shot_side == "left") & (isShotMade == "TRUE")) / sum(shot_side == "left"), 
+            pctrt = sum((shot_side == "right") & (isShotMade == "TRUE")) / sum(shot_side == "right"),
+            n = n(),
+            diff_side = pctrt - pctlft
+            ) 
+
+#playerside graph
+playerside_100 %>% ggplot(aes(x = pctlft, 
+                          y = pctrt, size = n)) + 
+  geom_point() + 
+  geom_abline(intercept = 0, slope = 1) +
+  geom_smooth(method = 'lm') +
+  geom_smooth(data = filter(playerside_100, n > 1000), method = 'lm')
+
+#diff_side graph
+playerside_100 %>% ggplot(aes(x = diff_side)) + geom_histogram()
+
 ```
 
